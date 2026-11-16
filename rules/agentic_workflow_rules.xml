@@ -1,0 +1,127 @@
+<!--
+  -  Agentic workflow abuse detection for GitHub Actions
+  -  Extends the Wazuh built-in GitHub ruleset (0750-github_rules.xml, IDs 91100 - 91449).
+  -  Install as /var/ossec/etc/rules/agentic_workflow_rules.xml on the Wazuh manager.
+-->
+
+<!--
+ID: 110500 - 110508
+-->
+
+<group name="github,agentic_workflow,">
+
+    <!-- Workflow run started by an event whose payload is text an outsider can write.
+         Parent: 91409 (workflows.created_workflow_run) -->
+    <rule id="110500" level="3">
+        <if_sid>91409</if_sid>
+        <field name="github.event" type="pcre2">^(issues|issue_comment|pull_request_target|pull_request_review|pull_request_review_comment|discussion|discussion_comment)$</field>
+        <description>GitHub Actions: workflow "$(github.name)" in $(github.repo) started by untrusted-input event $(github.event).</description>
+        <options>no_full_log</options>
+        <group>agentic_untrusted_trigger,</group>
+    </rule>
+
+    <!-- Job that was handed at least one secret other than the automatic GITHUB_TOKEN.
+         Parent: 91414 (workflows.prepared_workflow_job) -->
+    <rule id="110501" level="3">
+        <if_sid>91414</if_sid>
+        <field name="github.secrets_passed" type="pcre2">"(?!(?i:github_token)")[^"]+"</field>
+        <description>GitHub Actions: job "$(github.job_name)" in $(github.repo) received secrets $(github.secrets_passed).</description>
+        <options>no_full_log</options>
+        <group>agentic_secrets_passed,</group>
+    </rule>
+
+    <!-- Secrets handed to a job that belongs to an untrusted-input run (same workflow_run_id) -->
+    <rule id="110502" level="8" timeframe="900">
+        <if_sid>110501</if_sid>
+        <if_matched_sid>110500</if_matched_sid>
+        <same_field>github.workflow_run_id</same_field>
+        <description>GitHub Actions: secrets $(github.secrets_passed) passed to job "$(github.job_name)" of a workflow run started by untrusted input in $(github.repo).</description>
+        <mitre>
+            <id>T1552</id>
+        </mitre>
+        <options>no_full_log</options>
+        <group>agentic_secrets_exposure,</group>
+    </rule>
+
+    <!-- Push authenticated as a GitHub App or Actions bot identity.
+         Parent: 91160 (git.push) -->
+    <rule id="110503" level="3">
+        <if_sid>91160</if_sid>
+        <field name="github.actor" type="pcre2">\[bot\]$</field>
+        <description>GitHub: bot identity $(github.actor) pushed to $(github.repo).</description>
+        <options>no_full_log</options>
+        <group>agentic_bot_push,</group>
+    </rule>
+
+    <!-- Bot push to a repository shortly after an untrusted-input run started there -->
+    <rule id="110504" level="10" timeframe="900">
+        <if_sid>110503</if_sid>
+        <if_matched_sid>110500</if_matched_sid>
+        <same_field>github.repo</same_field>
+        <description>GitHub: $(github.actor) pushed to $(github.repo) after a workflow run started by untrusted input. Possible agentic workflow injection.</description>
+        <mitre>
+            <id>T1195.002</id>
+        </mitre>
+        <options>no_full_log</options>
+        <group>agentic_write_after_untrusted_trigger,</group>
+    </rule>
+
+    <!-- Same detection in the other arrival order. The GitHub module delivers the Git events of a
+         poll before its web events, so a push made during a short run reaches Wazuh before the run does.
+         Parent: 91408 (workflows.completed_workflow_run) -->
+    <rule id="110508" level="10" timeframe="900">
+        <if_sid>91408</if_sid>
+        <if_matched_sid>110503</if_matched_sid>
+        <same_field>github.repo</same_field>
+        <field name="github.event" type="pcre2">^(issues|issue_comment|pull_request_target|pull_request_review|pull_request_review_comment|discussion|discussion_comment)$</field>
+        <description>GitHub: workflow "$(github.name)" started by untrusted input ($(github.event)) completed in $(github.repo) after a bot identity pushed there. Possible agentic workflow injection.</description>
+        <mitre>
+            <id>T1195.002</id>
+        </mitre>
+        <options>no_full_log</options>
+        <group>agentic_write_after_untrusted_trigger,</group>
+    </rule>
+
+    <!-- Bot identity changing repository guardrails, visibility or membership -->
+    <rule id="110505" level="12">
+        <if_sid>91100</if_sid>
+        <field name="github.action" type="pcre2">^(protected_branch\.|repository_ruleset\.|repo\.access$|repo\.add_member$|org\.add_member$|org\.invite_member$|team\.add_member$)</field>
+        <field name="github.actor" type="pcre2">\[bot\]$</field>
+        <description>GitHub: bot identity $(github.actor) performed $(github.action) on $(github.repo).</description>
+        <mitre>
+            <id>T1562.001</id>
+            <id>T1098</id>
+        </mitre>
+        <options>no_full_log</options>
+        <group>agentic_guardrail_change,</group>
+    </rule>
+
+    <!-- Same guardrail changes when GitHub flags the actor as an AI agent -->
+    <rule id="110506" level="12">
+        <if_sid>91100</if_sid>
+        <field name="github.action" type="pcre2">^(protected_branch\.|repository_ruleset\.|repo\.access$|repo\.add_member$|org\.add_member$|org\.invite_member$|team\.add_member$)</field>
+        <field name="github.actor_is_agent" type="pcre2">^true$</field>
+        <description>GitHub: AI agent $(github.actor) performed $(github.action) on $(github.repo).</description>
+        <mitre>
+            <id>T1562.001</id>
+            <id>T1098</id>
+        </mitre>
+        <options>no_full_log</options>
+        <group>agentic_guardrail_change,</group>
+    </rule>
+
+    <!-- New secret scanning alert in a repository where an untrusted-input run started within the hour -->
+    <rule id="110507" level="12" timeframe="3600">
+        <if_sid>91100</if_sid>
+        <if_matched_sid>110500</if_matched_sid>
+        <same_field>github.repo</same_field>
+        <field name="github.action" type="pcre2">^secret_scanning_alert\.create$</field>
+        <description>GitHub: secret scanning alert ($(github.secret_type)) in $(github.repo) after a workflow run started by untrusted input.</description>
+        <mitre>
+            <id>T1552</id>
+        </mitre>
+        <options>no_full_log</options>
+        <group>agentic_secret_leak,</group>
+    </rule>
+
+</group>

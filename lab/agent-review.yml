@@ -1,0 +1,34 @@
+# Lab workflow: a harmless stand-in for an AI agent.
+# It has the three properties that make agentic workflows risky - it is started by
+# text anyone can write, it holds a secret, and it can write to the repository -
+# but it never sends the comment to a model or executes it.
+name: Agent review demo
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Stand-in for the agent
+        env:
+          DEMO_AGENT_KEY: ${{ secrets.DEMO_AGENT_KEY }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # A real agent would put $COMMENT_BODY into a prompt here.
+          # We only record that untrusted text reached a job that holds a secret.
+          mkdir -p agent-notes
+          printf 'comment %s processed (%s characters)\n' "$COMMENT_ID" "${#COMMENT_BODY}" >> agent-notes/log.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add agent-notes/log.txt
+          git commit -m "agent: record processed comment $COMMENT_ID"
+          git push
