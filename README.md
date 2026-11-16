@@ -12,7 +12,7 @@ Companion material for "Detecting Agentic Workflow Abuse in GitHub Actions with 
 
 ## Using the tests
 
-Follow the article to install the custom rules on a test manager. From the extracted archive directory:
+Follow the article to install the custom rules on a test manager. From the cloned repository directory:
 
 ```bash
 sudo python3 tests/run_tests.py
@@ -27,5 +27,8 @@ for your own test environment. These example scenarios are not a separate automa
 reproduction harness for the article's 1,500-chain stress test.
 
 No audit-log token, personal credentials, or operating-system metadata is included.
-The rules and scripts are preserved from the supplied lab package. Static parsing
-was performed during the editorial revision; no live GitHub/Wazuh test was rerun.
+
+## About
+
+Written by Albin Haliti as part of the [Wazuh Ambassadors Program](https://wazuh.com/ambassadors-program/?utm_source=ambassadors&utm_medium=referral&utm_campaign=ambassadors+program).
+Learn more about [Wazuh](https://wazuh.com/?utm_source=ambassadors&utm_medium=referral&utm_campaign=ambassadors+program).
